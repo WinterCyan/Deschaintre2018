@@ -44,7 +44,7 @@ class Decoder(nn.Module):
             nn.SELU()
         )
 
-    def forward(self, unet_input, link_input, global_input):
+    def forward(self, unet_input, link_input, global_input, dropout=0.0):
         concatenated_input = torch.cat((link_input, unet_input), dim=1)
         convolved = self.DeCONV(concatenated_input)
         normed = self.NORM(convolved)
@@ -56,6 +56,9 @@ class Decoder(nn.Module):
         unet_output = self.ReLU(torch.add(normed, expand_global_feature))
         concatenated_global = torch.cat((global_input, mean), dim=-1)
         global_output = self.GlobalFC(concatenated_global)
+        if dropout > 0.0:
+            unet_output = F.dropout(unet_output, p=dropout)
+            print("drop")
 
         return unet_output, global_output
 
@@ -99,6 +102,36 @@ class LastEncoder(nn.Module):
         unet_output = self.ReLU(convolved)
         concatenated_global = torch.cat((global_input, mean), dim=-1)
         global_output = self.GlobalFC(concatenated_global)
+
+        return unet_output, global_output
+
+
+class InitDecoder(nn.Module):
+    def __init__(self, c_in, c_out, c_gb_in, c_gb_out):
+        super().__init__()
+        self.DeCONV = nn.ConvTranspose2d(c_in, c_out, kernel_size=4, stride=2, padding=1)
+        self.NORM = nn.InstanceNorm2d(c_out)
+        self.ReLU = nn.LeakyReLU(negative_slope=0.2)
+        self.Global2UnetFC = nn.Linear(c_gb_in, c_out)
+        self.GlobalFC = nn.Sequential(
+            nn.Linear(c_gb_in+c_out, c_gb_out),
+            nn.SELU()
+        )
+
+    def forward(self, unet_input,global_input, dropout=0.0):
+        convolved = self.DeCONV(unet_input)
+        normed = self.NORM(convolved)
+        h_out = normed.shape[2]
+        w_out = normed.shape[3]
+        mean = torch.mean(convolved, [2, 3])
+        global_feature = self.Global2UnetFC(global_input)
+        expand_global_feature = torch.unsqueeze(torch.unsqueeze(global_feature, -1), -1).expand(-1, -1, h_out, w_out)
+        unet_output = self.ReLU(torch.add(normed, expand_global_feature))
+        concatenated_global = torch.cat((global_input, mean), dim=-1)
+        global_output = self.GlobalFC(concatenated_global)
+        if dropout > 0.0:
+            unet_output = F.dropout(unet_output, p=dropout)
+            print("drop")
 
         return unet_output, global_output
 
