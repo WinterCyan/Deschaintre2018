@@ -1,4 +1,7 @@
 from ModelParts import *
+import torch.nn as nn
+from Utils import *
+from Environment import *
 
 ngf = 64
 input_channel = 3
@@ -53,44 +56,62 @@ class MaterialNet(nn.Module):
 # [N,0:3,H,W] -> PredictionNet -> [N,9,H,W](+lightpos, viewpos) -> Renderer -> [N,3,H,W]
 #                   |<------- loss --<---|---------<---------------------------------|
 
-# input_img: [N, 3*5, H, W] + lightpos + viewpos
-# output_params: [N, 9, H, W], normal + albedo +
-def render_loss(input_params, lightpos, viewpos, output_params):
-    N, C_total, H, W = input_params.shape
-    C = C_total / 5.0
-    GT_rendered = input_params[:, 0:C, :, :]
-    GT_normal = input_params[:, C:2 * C, :, :]
-    GT_albedo = input_params[:, 2 * C:3 * C, :, :]
-    GT_roughness = input_params[:, 3 * C:4 * C, :, :]
-    GT_specular = input_params[:, 4 * C:5 * C, :, :]
-    extended_params = extend_output(output_params)  # [N,3*4,H,W], normal + albedo + roughness + specular
-    output_normal = extended_params[:, 0:C, :, :]
-    output_albedo = extended_params[:, C:2 * C, :, :]
-    output_roughness = extended_params[:, 2 * C:3 * C, :, :]
-    output_specular = extended_params[:, 3 * C:4 * C, :, :]
-    output_rendered = torch_renderer(
-        normal=output_normal,
-        albedo=output_albedo,
-        roughness=output_roughness,
-        specular=output_specular,
-        lightpos=lightpos,
-        viewpos=viewpos
-    )
-    loss = img_l2_loss(GT_rendered, output_rendered)  # confirm that img are > 0, < 1 ???
-    return loss
+
+class L1Loss(nn.Module):
+    def forward(self, input_batch, target_batch):
+        # input_batch: [N, 9, H, W]
+        # target: [N, 12, H, W]
+        estimated_normals, estimated_diffuse, estimated_roughness, estimated_specular = expand_split_svbrdf(input_batch)
+        target_normals, target_diffuse, target_roughness, target_specular = expand_split_svbrdf(target_batch)
+        estimated_diffuse = torch.log(estimated_diffuse+0.01)
+        estimated_specular = torch.log(estimated_specular+0.01)
+        target_diffuse = torch.log(target_diffuse+0.01)
+        target_specular = torch.log(target_specular+0.01)
+
+        return nn.functional.l1_loss(estimated_normals, target_normals) + nn.functional.l1_loss(estimated_diffuse, target_diffuse) + nn.functional.l1_loss(estimated_roughness, target_roughness) + nn.functional.l1_loss(estimated_specular, target_specular)
 
 
-def extend_output(params):
-    extended = params
-    return extended
+class RenderingLoss(nn.Module):
+    def __init__(self, renderer):
+        super(RenderingLoss, self).__init__()
+        self.renderer = renderer
+        self.random_scenes_count = 3
+        self.specular_scenes_count = 6
+
+    def forward(self, input_batch, target_batch):
+        # input_batch: [N, 9, H, W]
+        # target: [N, 12, H, W]
+        input_svbrdf = expand_svbrdf(input_batch)  # [N, 12, H, W]
+        batch_size = input_batch.shape[0]
+        estimated_renderings_batch = []
+        target_renderings_batch = []
+        for i in range(batch_size):
+            scenes = generate_random_scenes(count=self.random_scenes_count) + generate_specular_scenes(self.specular_scenes_count)
+
+            estimated_svbrdf = input_svbrdf[i]  # [12,H,W]
+            target_svbrdf = target_batch[i]
+            estimated_renderings = []
+            target_renderings = []
+
+            for scene in scenes:
+                estimated_renderings.append(self.renderer.render(scene, estimated_svbrdf))
+                target_renderings.append(self.renderer.render(scene, target_svbrdf))
+            estimated_renderings_batch.append(torch.cat(estimated_renderings, dim=0))
+            target_renderings_batch.append(torch.cat(target_renderings, dim=0))
+
+        estimated_renderings_batch_log = torch.log(torch.stack(estimated_renderings_batch, dim=0)+0.1)
+        target_renderings_batch_log = torch.log(torch.stack(target_renderings_batch, dim=0)+0.1)
+
+        loss = nn.functional.l1_loss(estimated_renderings_batch_log, target_renderings_batch_log)
+        return loss
 
 
-def torch_renderer(normal, albedo, roughness, specular, lightpos, viewpos):
-    rendering = normal
-    return rendering
+class MixLoss(nn.Module):
+    def __init__(self, renderer, l1_weight=0.1):
+        super(MixLoss, self).__init__()
+        self.l1_weight = l1_weight
+        self.l1_loss = L1Loss()
+        self.rendering_loss = RenderingLoss(renderer=renderer)
 
-
-def img_l2_loss(img1, img2):
-    diff = torch.log(img1+0.01) - torch.log(img2+0.01)
-    loss = torch.sum(diff**2)
-    return loss
+    def forward(self, input_batch, target_batch):
+        return self.l1_weight*self.l1_loss(input_batch, target_batch) + self.rendering_loss(input_batch, target_batch)

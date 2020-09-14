@@ -4,9 +4,12 @@ from PIL import Image
 from torchvision import transforms
 import numpy as np
 from torch.autograd import Variable
+import torch.nn.functional as F
+import numpy as np
 from Dataset import *
 from matplotlib import pyplot as plt
 from InNetworkRenderer import *
+import renderer_net_copy
 
 if __name__ == '__main__':
     # x = torch.randn(5, 64, 128, 128)
@@ -21,18 +24,24 @@ if __name__ == '__main__':
     to_img = transforms.ToPILImage()
     to_tensor = transforms.ToTensor()
 
-    img = Image.open('1.png')
+    img = Image.open('5.png')
+    img = np.float32(img)/255.0
     img = to_tensor(img)
-    img = torch.unsqueeze(img, dim=0)
-    img_tensor = torch.squeeze(batch_to_tensor(img), dim=0)
+    img = img.unsqueeze(dim=0)
+    img_tensor = torch.squeeze(batch_to_tensor(img), dim=0).cuda()
     svbrdf_single = img_tensor[3:, :, :]
-    lightpos = generate_direction(1)
-    viewpos = generate_direction(1)
-    lightpos = torch.squeeze(lightpos, dim=0)
-    viewpos = torch.squeeze(viewpos, dim=0)
-    result = single_renderer(svbrdf_single, lightpos, viewpos)
+    lightpos = torch.tensor([0.0, -1.0, 2.0])
+    viewpos = torch.tensor([0.0, 0.0, 2.0])
+    # lightpos = torch.squeeze(lightpos, dim=0)
+    lightpos = lightpos.squeeze(dim=0)
+    viewpos = viewpos.squeeze(dim=0)
+    renderer = InNetworkRenderer()
+    scene = generate_specular_scenes(1)[0]
+    result = renderer.render(scene, svbrdf_single)
+    result = result.cpu()
     print(result.shape)
-    rendered = to_img(result)
+    rendered = gamma(result)
+    rendered = to_img(rendered)
     plt.imshow(rendered)
     plt.show()
 

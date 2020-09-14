@@ -1,6 +1,12 @@
 import torch
+from Environment import *
 import math
+from torchvision import transforms
+from matplotlib import pyplot as plt
 import torch.nn.functional as F
+
+to_img = transforms.ToPILImage()
+to_tensor = transforms.ToTensor()
 
 
 def map_to_img(x):
@@ -20,7 +26,7 @@ def generate_direction(batch_size, low_eps=0.001, high_eps=0.05):
     y = r * torch.sin(phi)
     # z = torch.sqrt(1.0 - torch.square(r))
     z = torch.sqrt(1.0 - r**2)
-    final_vec = torch.cat([x,y,z], dim=-1)  # [N, 3], every vec for a single sample in the batch
+    final_vec = torch.cat([x, y, z], dim=-1)  # [N, 3], every vec for a single sample in the batch
     return final_vec
 
 
@@ -30,132 +36,110 @@ def generate_distance(batch_size):
     return torch.exp(expo)
 
 
+def dot_vec(x, y):
+    # x,y: [N,C,H,W]
+    return torch.sum(torch.mul(x, y), dim=-3, keepdim=True)
+
+
 def norm_vec(x):
     # vec: [N,3]
     # len = torch.sqrt(torch.sum(torch.square(x), dim=-1, keepdim=True))
-    length = torch.sqrt(torch.sum(x**2, dim=-1, keepdim=True))
-    return torch.div(x, length)
+    return torch.div(x, torch.sqrt(dot_vec(x, x)))
 
 
-def dot_vec(x,y):
-    # x,y: [N,C,H,W]
-    return torch.mul(x,y)
+def xi(x):
+    return (x > 0.0)*torch.ones_like(x)
 
 
-# svbrdf: [N,12,H,W], normal, diffuse, roughness, specular
-# wi, wo: [N, 3]
-def tf_render(svbrdf, wi, wo):
-    # params: [N,3,H,W]
-    normal = svbrdf[:, 0:3, :, :]
-    diffuse = torch.clamp(map_to_img(svbrdf[:, 3:6, :, :]), min=0.0, max=1.0)
-    roughness = torch.clamp(map_to_img(svbrdf[:, 6:9, :, :]), min=0.001, max=1.0)
-    specular = torch.clamp(map_to_img(svbrdf[:, 9:12, :, :]), min=0.0, max=1.0)
-    wi_norm = norm_vec(wi)
-    wo_norm = norm_vec(wo)
-    wi_norm = torch.unsqueeze(torch.unsqueeze(wi_norm, -1), -1)  # [N,3,1,1]
-    wo_norm = torch.unsqueeze(torch.unsqueeze(wo_norm, -1), -1)  # [N,3,1,1]
-    h = norm_vec(torch.add(wi_norm, wo_norm)/2.0)  # [N,3,1,1]
-    NdotH = torch.mul(normal, h)
-    NdotL = torch.mul(normal, wi_norm)
-    NdotV = torch.mul(normal, wo_norm)
-    VdotH = torch.mul(wo_norm, h)
-    NdotH_pos = torch.clamp(NdotH, min=0.0)
-    NdotL_pos = torch.clamp(NdotL, min=0.0)
-    NdotV_pos = torch.clamp(NdotV, min=0.0)
-    VdotH_pos = torch.clamp(VdotH, min=0.0)
+def gamma(x):
+    return torch.pow(x, 1.0/2.2)
 
-    diffuse_rendered = diffuse * (1.0 - specular)/math.pi
 
-    # D
-    # alpha = torch.square(roughness)
-    alpha = roughness**2
-    # denominator = 1.0/torch.clamp((torch.square(NdotH_pos)*(torch.square(alpha)-1.0)+1.0), min=0.001)
-    denominator = 1.0/torch.clamp(((NdotH_pos**2)*((alpha**2)-1.0)+1.0), min=0.001)
-    # D = torch.square(alpha*denominator)/math.pi
-    D = ((alpha*denominator)**2)/math.pi
+def de_gamma(x):
+    return torch.pow(x, 2.2)
 
-    # F
-    sphg = torch.pow(((-5.55473*VdotH_pos)-6.98316)*VdotH_pos, exponent=2.0)
-    F = specular+(1.0-specular)*sphg
 
-    # G
-    # k = torch.square(roughness)/2.0
-    k = (roughness**2)/2.0
-    g1 = 1.0/torch.clamp((NdotL_pos*(1.0-k)+k), min=0.001)
-    g2 = 1.0/torch.clamp((NdotV_pos*(1.0-k)+k), min=0.001)
-    G = g1 + g2
+def displayimg(t):
+    img = to_img(t)
+    plt.imshow(img)
+    plt.show()
 
-    specular_rendered = F*(G*D*0.25)
-    result = specular_rendered
-    result = torch.add(result, diffuse_rendered)
 
-    light_intensity = 1.0
-    light_factor = light_intensity * math.pi
+class InNetworkRenderer:
+    def diffuse_term(self, diffuse, ks):
+        kd = 1.0-ks
+        return kd*diffuse/math.pi
 
-    result = result * light_factor
+    def ndf(self, roughness, NH):
+        alpha = roughness**2
+        alpha_squared = alpha**2
+        NH_squared = NH**2
+        denom = torch.clamp(NH_squared*(alpha_squared+(1.0-NH_squared)/NH_squared), min=0.001)
+        return (alpha_squared * xi(NH))/(math.pi * denom**2)
 
-    # This division is to compensate for the cosinus distribution of the intensity in the rendering
-    # result = result * NdotL_pos / tf.expand_dims(tf.maximum(wiNorm[:,:,:,2], 0.001), axis=-1)
-    # result = result * NdotL_pos / torch.unsqueeze(torch.clamp(wi_norm[:, :, :, 2], min=0.001), dim=-1)
 
-    # return [result, D, G, F, diffuse_rendered, diffuse]
-    return result
+    def fresnel(self, specular, VH):
+        return specular+(1.0-specular)*(1.0-VH)**5
 
-def single_renderer(svbrdf, wi, wo):
-    # svbrdf, 1 tensor of 4 params: normal albedo, roughness, specular, [12,288,288]
-    # wi, wo: [3]
-    # params: [3,288,288]
-    normal = svbrdf[0:3, :, :]
-    diffuse = torch.clamp(map_to_img(svbrdf[3:6, :, :]), min=0.0, max=1.0)
-    roughness = torch.clamp(map_to_img(svbrdf[6:9, :, :]), min=0.001, max=1.0)
-    specular = torch.clamp(map_to_img(svbrdf[9:12, :, :]), min=0.0, max=1.0)
-    wi_norm = norm_vec(wi)
-    wo_norm = norm_vec(wo)
-    wi_norm = torch.unsqueeze(torch.unsqueeze(wi_norm, -1), -1)  # [3,1,1]
-    wo_norm = torch.unsqueeze(torch.unsqueeze(wo_norm, -1), -1)  # [3,1,1]
-    h = norm_vec(torch.add(wi_norm, wo_norm)/2.0)  # [3,1,1]
-    NdotH = torch.mul(normal, h)
-    NdotL = torch.mul(normal, wi_norm)
-    NdotV = torch.mul(normal, wo_norm)
-    VdotH = torch.mul(wo_norm, h)
-    NdotH_pos = torch.clamp(NdotH, min=0.0)
-    NdotL_pos = torch.clamp(NdotL, min=0.0)
-    NdotV_pos = torch.clamp(NdotV, min=0.0)
-    VdotH_pos = torch.clamp(VdotH, min=0.0)
 
-    diffuse_rendered = diffuse * (1.0 - specular)/math.pi
+    def g1(self, roughness, XH, XN):
+        alpha = roughness**2
+        alpha_squared = alpha**2
+        XN_squared = XN**2
+        return 2 * xi(XH/XN)/(1.0+torch.sqrt(1.0+alpha_squared*(1.0-XN_squared)/XN_squared))
 
-    # D
-    # alpha = torch.square(roughness)
-    alpha = roughness**2
-    # denominator = 1.0/torch.clamp((torch.square(NdotH_pos)*(torch.square(alpha)-1.0)+1.0), min=0.001)
-    denominator = 1.0/torch.clamp(((NdotH_pos**2)*((alpha**2)-1.0)+1.0), min=0.001)
-    # D = torch.square(alpha*denominator)/math.pi
-    D = ((alpha*denominator)**2)/math.pi
 
-    # F
-    sphg = torch.pow(((-5.55473*VdotH_pos)-6.98316)*VdotH_pos, exponent=2.0)
-    F = specular+(1.0-specular)*sphg
+    def geometry(self, roughness, VH, LH, VN, LN):
+        return self.g1(roughness, VH, VN) * self.g1(roughness, LH, LN)
 
-    # G
-    # k = torch.square(roughness)/2.0
-    k = (roughness**2)/2.0
-    g1 = 1.0/torch.clamp((NdotL_pos*(1.0-k)+k), min=0.001)
-    g2 = 1.0/torch.clamp((NdotV_pos*(1.0-k)+k), min=0.001)
-    G = g1 + g2
 
-    specular_rendered = F*(G*D*0.25)
-    result = specular_rendered
-    result = torch.add(result, diffuse_rendered)
+    def specular_term(self, wi, wo, normals, diffuse, roughness, specular):
+        H = norm_vec((wi+wo)/2.0)
+        NH = torch.clamp(dot_vec(normals, H), min=0.001)
+        VH = torch.clamp(dot_vec(wo, H), min=0.001)
+        LH = torch.clamp(dot_vec(wi, H), min=0.001)
+        VN = torch.clamp(dot_vec(wo, normals), min=0.001)
+        LN = torch.clamp(dot_vec(wi, normals), min=0.001)
+        F = self.fresnel(specular, VH)
+        G = self.geometry(roughness, VH, LH, VN, LN)
+        D = self.ndf(roughness, NH)
+        return F*G*D/(4.0*VN*LN), F
 
-    light_intensity = 1.0
-    light_factor = light_intensity * math.pi
 
-    result = result * light_factor
+    def brdf(self, wi, wo, normals, diffuse, roughness, specular):
+        spec, ks = self.specular_term(wi, wo, normals, diffuse, roughness, specular)
+        diff = self.diffuse_term(diffuse, ks)
+        return spec+diff
 
-    # This division is to compensate for the cosinus distribution of the intensity in the rendering
-    # result = result * NdotL_pos / tf.expand_dims(tf.maximum(wiNorm[:,:,:,2], 0.001), axis=-1)
-    # result = result * NdotL_pos / torch.unsqueeze(torch.clamp(wi_norm[:, :, :, 2], min=0.001), dim=-1)
 
-    # return [result, D, G, F, diffuse_rendered, diffuse]
-    return result
+    def render(self, scene, svbrdf):
+        device = svbrdf.device
+        # svbrdf: [12, H, W]
+        normal = svbrdf[0:3, :, :]
+        normal = de_map(normal)
+        diffuse = svbrdf[3:6, :, :]
+        roughness = svbrdf[6:9, :, :]
+        roughness = torch.clamp(roughness, min=0.001)
+        specular = svbrdf[9:12, :, :]
+
+        coords_row = torch.linspace(-1.0, 1.0, svbrdf.shape[-1], device=device)
+        coordsx = coords_row.unsqueeze(0).expand(svbrdf.shape[-2], svbrdf.shape[-1]).unsqueeze(0)
+        coordsy = -1.0*torch.transpose(coordsx, dim0=1, dim1=2)
+        coords = torch.cat((coordsx, coordsy, torch.zeros_like(coordsx)), dim=0)
+
+        camera_pos = torch.Tensor(scene.camera.pos).unsqueeze(-1).unsqueeze(-1).to(device)
+        light_pos = torch.Tensor(scene.light.pos).unsqueeze(-1).unsqueeze(-1).to(device)
+        relative_camera_pos = camera_pos - coords
+        relative_light_pos = light_pos - coords
+        wi = norm_vec(relative_camera_pos)
+        wo = norm_vec(relative_light_pos)
+
+        f = self.brdf(wi, wo, normal, diffuse, roughness, specular)
+        LN = torch.clamp(dot_vec(wi, normal), min=0.0)
+        falloff = 1.0/torch.sqrt(dot_vec(relative_light_pos, relative_camera_pos))**2
+        lightcolor = torch.Tensor([10.0,10.0,10.0]).unsqueeze(-1).unsqueeze(-1).to(device)
+        radiance = torch.mul(torch.mul(f, lightcolor*falloff), LN)
+        radiance = torch.clamp(radiance, min=0.0, max=1.0)
+
+        return radiance
+
