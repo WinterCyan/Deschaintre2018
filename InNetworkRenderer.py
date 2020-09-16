@@ -1,39 +1,10 @@
 import torch
 from Environment import *
+from Utils import *
 import math
 from torchvision import transforms
 from matplotlib import pyplot as plt
 import torch.nn.functional as F
-
-to_img = transforms.ToPILImage()
-to_tensor = transforms.ToTensor()
-
-
-def map_to_img(x):
-    return x/2.0 + 0.5
-
-
-def de_map(x):
-    return 2.0*x - 1.0
-
-
-def generate_direction(batch_size, low_eps=0.001, high_eps=0.05):
-    r1 = low_eps + (1.0 - high_eps - low_eps) * torch.rand([batch_size, 1], dtype=torch.float32)  # [0.001, 0.05]
-    r2 = torch.rand([batch_size, 1], dtype=torch.float32)  # [0, 1]
-    r = torch.sqrt(r1)
-    phi = 2 * math.pi * r2
-    x = r * torch.cos(phi)
-    y = r * torch.sin(phi)
-    # z = torch.sqrt(1.0 - torch.square(r))
-    z = torch.sqrt(1.0 - r**2)
-    final_vec = torch.cat([x, y, z], dim=-1)  # [N, 3], every vec for a single sample in the batch
-    return final_vec
-
-
-def generate_distance(batch_size):
-    norm_distribution = torch.distributions.Normal(loc=0.5, scale=0.75)
-    expo = norm_distribution.sample([batch_size, 1])
-    return torch.exp(expo)
 
 
 def dot_vec(x, y):
@@ -57,12 +28,6 @@ def gamma(x):
 
 def de_gamma(x):
     return torch.pow(x, 2.2)
-
-
-def displayimg(t):
-    img = to_img(t)
-    plt.imshow(img)
-    plt.show()
 
 
 class InNetworkRenderer:
@@ -114,7 +79,7 @@ class InNetworkRenderer:
 
     def render(self, scene, svbrdf):
         device = svbrdf.device
-        # svbrdf: [12, H, W]
+        # svbrdf: [12, H, W], [0,1]
         normal = svbrdf[0:3, :, :]
         normal = de_map(normal)
         diffuse = svbrdf[3:6, :, :]
@@ -137,8 +102,12 @@ class InNetworkRenderer:
         f = self.brdf(wi, wo, normal, diffuse, roughness, specular)
         LN = torch.clamp(dot_vec(wi, normal), min=0.0)
         falloff = 1.0/torch.sqrt(dot_vec(relative_light_pos, relative_camera_pos))**2
-        lightcolor = torch.Tensor([10.0,10.0,10.0]).unsqueeze(-1).unsqueeze(-1).to(device)
+        # lightcolor = torch.Tensor([50.0, 50.0, 50.0]).unsqueeze(-1).unsqueeze(-1).to(device)
+        # lightcolor = torch.Tensor([10.0, 10.0, 10.0]).unsqueeze(-1).unsqueeze(-1).to(device)
+        lightcolor = torch.Tensor([30.0, 30.0, 30.0]).unsqueeze(-1).unsqueeze(-1).to(device)
+        f = torch.clamp(f, min=0.0, max=1.0)
         radiance = torch.mul(torch.mul(f, lightcolor*falloff), LN)
+        # radiance = torch.mul(torch.mul(f, falloff), LN)
         radiance = torch.clamp(radiance, min=0.0, max=1.0)
 
         return radiance

@@ -59,10 +59,10 @@ class MaterialNet(nn.Module):
 
 class L1Loss(nn.Module):
     def forward(self, input_batch, target_batch):
-        # input_batch: [N, 9, H, W]
-        # target: [N, 12, H, W]
+        # input_batch: [N, 9, H, W], range [-1,1]
+        # target: [N, 12, H, W], range [0,1]
         estimated_normals, estimated_diffuse, estimated_roughness, estimated_specular = expand_split_svbrdf(input_batch)
-        target_normals, target_diffuse, target_roughness, target_specular = expand_split_svbrdf(target_batch)
+        target_normals, target_diffuse, target_roughness, target_specular = split_svbrdf(target_batch)
         estimated_diffuse = torch.log(estimated_diffuse+0.01)
         estimated_specular = torch.log(estimated_specular+0.01)
         target_diffuse = torch.log(target_diffuse+0.01)
@@ -86,7 +86,7 @@ class RenderingLoss(nn.Module):
         estimated_renderings_batch = []
         target_renderings_batch = []
         for i in range(batch_size):
-            scenes = generate_random_scenes(count=self.random_scenes_count) + generate_specular_scenes(self.specular_scenes_count)
+            scenes = generate_random_scenes(count=self.random_scenes_count) + generate_specular_scenes(count=self.specular_scenes_count)
 
             estimated_svbrdf = input_svbrdf[i]  # [12,H,W]
             target_svbrdf = target_batch[i]
@@ -94,11 +94,14 @@ class RenderingLoss(nn.Module):
             target_renderings = []
 
             for scene in scenes:
+                # list[9*[3,256,256]]
                 estimated_renderings.append(self.renderer.render(scene, estimated_svbrdf))
                 target_renderings.append(self.renderer.render(scene, target_svbrdf))
+            # list[8*[27,256,256]]
             estimated_renderings_batch.append(torch.cat(estimated_renderings, dim=0))
             target_renderings_batch.append(torch.cat(target_renderings, dim=0))
 
+        # [8,27,256,256]
         estimated_renderings_batch_log = torch.log(torch.stack(estimated_renderings_batch, dim=0)+0.1)
         target_renderings_batch_log = torch.log(torch.stack(target_renderings_batch, dim=0)+0.1)
 

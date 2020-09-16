@@ -58,7 +58,6 @@ class Decoder(nn.Module):
         global_output = self.GlobalFC(concatenated_global)
         if dropout > 0.0:
             unet_output = F.dropout(unet_output, p=dropout)
-            print("drop")
 
         return unet_output, global_output
 
@@ -131,7 +130,6 @@ class InitDecoder(nn.Module):
         global_output = self.GlobalFC(concatenated_global)
         if dropout > 0.0:
             unet_output = F.dropout(unet_output, p=dropout)
-            print("drop")
 
         return unet_output, global_output
 
