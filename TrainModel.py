@@ -68,6 +68,7 @@ if __name__ == '__main__':
                 print(torch.max(estimated_svbrdf_batch))
                 print("min of redering log: ", torch.min(rendering_log))
                 print("max of redering log: ", torch.max(rendering_log))
+
                 normal_map = to_img(normals.squeeze(0).cpu())
                 diffuse_map = to_img(diffuse.squeeze(0).cpu())
                 roughness_map = to_img(roughness.squeeze(0).cpu())
