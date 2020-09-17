@@ -41,8 +41,10 @@ def split_svbrdf(input_svbrdf):
 
 
 def expand_svbrdf(input_svbrdf):
+    # input_svbrdf: [N, 9, H, W], 2, 3, 1, 3; between [-1,1]
     normals, diffuse, roughness, specular = expand_split_svbrdf(input_svbrdf)
-    expanded = torch.cat([normals, diffuse, roughness, specular], dim=-3)  # [8,12,H,W]
+    # [N,12,H,W], between [0,1]
+    expanded = torch.cat([normals, diffuse, roughness, specular], dim=-3)
 
     return expanded
 

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch import optim
+import numpy as np
 import math
 import time
 from torch.utils.data import DataLoader, random_split
@@ -41,9 +42,16 @@ if __name__ == '__main__':
     training_data_loader = DataLoader(training_data, batch_size=8, pin_memory=True, shuffle=True)
     validation_data_loader = DataLoader(validation_data, batch_size=8, pin_memory=True, shuffle=False)
     batch_num = int(math.ceil(len(training_data)/training_data_loader.batch_size))  # 24635
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
     in_net_renderer = InNetworkRenderer()
-    loss_func = MixLoss(renderer=in_net_renderer)
+    # loss_func = MixLoss(renderer=in_net_renderer)
+    # loss_func = L1Loss()
+    loss_func = RenderingLoss(renderer=in_net_renderer)
+
+
+    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+    ckp_path = 'modelsavings/checkpoint.pt'
+    model, optimizer, load_epoch = load_ckp(ckp_path, model, optimizer)
 
     model.train()
     epochs = 100
@@ -54,21 +62,49 @@ if __name__ == '__main__':
             img_batch = sample["img"].to(device)
             target_svbrdf_batch = sample["svbrdf"].to(device)
             estimated_svbrdf_batch = model(img_batch)
-            loss = loss_func(estimated_svbrdf_batch, target_svbrdf_batch)
+            loss, rendering_log = loss_func(estimated_svbrdf_batch, target_svbrdf_batch)
+            if np.isnan(loss.item()):
+                normals, diffuse, roughness, specular = expand_split_svbrdf(estimated_svbrdf_batch[0])
+                print(torch.max(estimated_svbrdf_batch))
+                print("min of redering log: ", torch.min(rendering_log))
+                print("max of redering log: ", torch.max(rendering_log))
+                normal_map = to_img(normals.squeeze(0).cpu())
+                diffuse_map = to_img(diffuse.squeeze(0).cpu())
+                roughness_map = to_img(roughness.squeeze(0).cpu())
+                specular_map = to_img(specular.squeeze(0).cpu())
+                rendered_img = to_img(in_net_renderer.render(generate_specular_scenes(1)[0], expand_svbrdf(estimated_svbrdf_batch)[0]).cpu())
+                fig = plt.figure(figsize=(12, 5))
+                fig.add_subplot(1, 5, 1)
+                plt.imshow(rendered_img)
+                plt.axis('off')
+                fig.add_subplot(1, 5, 2)
+                plt.imshow(normal_map)
+                plt.axis('off')
+                fig.add_subplot(1, 5, 3)
+                plt.imshow(diffuse_map)
+                plt.axis('off')
+                fig.add_subplot(1, 5, 4)
+                plt.imshow(roughness_map)
+                plt.axis('off')
+                fig.add_subplot(1, 5, 5)
+                plt.imshow(specular_map)
+                plt.axis('off')
+                plt.show()
             epoch_loss += loss.item()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            if (batch_idx+1) % 1000 == 0:
-                print("Epoch {:d}, Batch {:d}, loss: {:f}".format(epoch, batch_idx+1, loss.item()))
+            # if (batch_idx+1) % 1000 == 0:
+            #     print("Epoch {:d}, Batch {:d}, loss: {:f}".format(epoch, batch_idx+1, loss.item()))
+            print("Epoch {:d}, Batch {:d}, loss: {:f}".format(epoch+1, batch_idx+1, loss.item()))
             if batch_idx == batch_num-1:
-                print("Epoch {:d}, Batch {:d}, loss: {:f}".format(epoch, batch_idx+1, loss.item()))
+                print("Epoch {:d}, Batch {:d}, loss: {:f}".format(epoch+1, batch_idx+1, loss.item()))
         epoch_end_time = time.time()
         epoch_time = epoch_end_time-epoch_start_time
         print('----------------------EPOCH{}---------------------'.format(epoch))
         print("epoch loss: "+str(epoch_loss))
         print("epoch time: "+str(epoch_time))
-        if (epoch+1)%10 == 0:
+        if (epoch+1) % 10 == 0:
             checkpoint = {
                 'epoch': epoch+1,
                 'state_dict': model.state_dict(),

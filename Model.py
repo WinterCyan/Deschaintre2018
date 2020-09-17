@@ -106,7 +106,7 @@ class RenderingLoss(nn.Module):
         target_renderings_batch_log = torch.log(torch.stack(target_renderings_batch, dim=0)+0.1)
 
         loss = nn.functional.l1_loss(estimated_renderings_batch_log, target_renderings_batch_log)
-        return loss
+        return loss, torch.stack(estimated_renderings_batch, dim=0)
 
 
 class MixLoss(nn.Module):
