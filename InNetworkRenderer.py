@@ -2,6 +2,7 @@ import torch
 from Environment import *
 from Utils import *
 import math
+import numpy as np
 from torchvision import transforms
 from matplotlib import pyplot as plt
 import torch.nn.functional as F
@@ -101,7 +102,7 @@ class InNetworkRenderer:
 
         f = self.brdf(wi, wo, normal, diffuse, roughness, specular)
         LN = torch.clamp(dot_vec(wi, normal), min=0.0)
-        falloff = 1.0/torch.sqrt(dot_vec(relative_light_pos, relative_camera_pos))**2
+        falloff = 1.0/torch.sqrt(dot_vec(relative_light_pos, relative_light_pos))**2
         # lightcolor = torch.Tensor([50.0, 50.0, 50.0]).unsqueeze(-1).unsqueeze(-1).to(device)
         # lightcolor = torch.Tensor([10.0, 10.0, 10.0]).unsqueeze(-1).unsqueeze(-1).to(device)
         lightcolor = torch.Tensor([30.0, 30.0, 30.0]).unsqueeze(-1).unsqueeze(-1).to(device)

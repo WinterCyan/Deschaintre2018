@@ -6,7 +6,7 @@ from PIL import Image
 from PIL import ImageFile
 import torchvision.transforms as transforms
 
-ImageFile.LOAD_TRUNCATED_IMAGES = True
+# ImageFile.LOAD_TRUNCATED_IMAGES = True
 transformer = transforms.Compose([transforms.ToTensor()])
 
 

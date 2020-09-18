@@ -1,4 +1,5 @@
 from ModelParts import *
+import numpy as np
 import torch.nn as nn
 from Utils import *
 from Environment import *
@@ -100,13 +101,15 @@ class RenderingLoss(nn.Module):
             # list[8*[27,256,256]]
             estimated_renderings_batch.append(torch.cat(estimated_renderings, dim=0))
             target_renderings_batch.append(torch.cat(target_renderings, dim=0))
+            # if np.isnan(estimated_renderings_batch):
+            #     print("rendering batch is nan...")
 
         # [8,27,256,256]
         estimated_renderings_batch_log = torch.log(torch.stack(estimated_renderings_batch, dim=0)+0.1)
         target_renderings_batch_log = torch.log(torch.stack(target_renderings_batch, dim=0)+0.1)
 
         loss = nn.functional.l1_loss(estimated_renderings_batch_log, target_renderings_batch_log)
-        return loss, torch.stack(estimated_renderings_batch, dim=0)
+        return loss
 
 
 class MixLoss(nn.Module):
