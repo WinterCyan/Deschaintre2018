@@ -45,9 +45,6 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
     in_net_renderer = InNetworkRenderer()
     loss_func = MixLoss(renderer=in_net_renderer)
-    # loss_func = L1Loss()
-    # loss_func = RenderingLoss(renderer=in_net_renderer)
-
 
     # optimizer = optim.Adam(model.parameters(), lr=1e-5)
     # ckp_path = 'modelsavings/checkpoint.pt'
