@@ -81,4 +81,3 @@ if __name__ == '__main__':
             }
             is_best = True if epoch == epochs-1 else False
             save_ckp(checkpoint, is_best, 'modelsavings', 'modelsavings')
-

@@ -108,7 +108,6 @@ class InNetworkRenderer:
         lightcolor = torch.Tensor([30.0, 30.0, 30.0]).unsqueeze(-1).unsqueeze(-1).to(device)
         f = torch.clamp(f, min=0.0, max=1.0)
         radiance = torch.mul(torch.mul(f, lightcolor*falloff), LN)
-        # radiance = torch.mul(torch.mul(f, falloff), LN)
         radiance = torch.clamp(radiance, min=0.01, max=1.0)
 
         return radiance
