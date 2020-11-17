@@ -10,7 +10,6 @@ def expand_split_svbrdf(input_svbrdf):
     # input_svbrdf: [N, 9, H, W], 2, 3, 1, 3; between [-1,1]
     splited = input_svbrdf.split(1, dim=-3)
 
-    normals_xy = map_to_img(torch.cat(splited[0:2], dim=-3))  # [8,2,H,W], [0,1]
     diffuse = map_to_img(torch.cat(splited[2:5], dim=-3))  # [8,3,H,W], [0,1]
     roughness_scalar = map_to_img(torch.cat(splited[5:6], dim=-3))  # [8,1,H,W], [0,1]
     specular = map_to_img(torch.cat(splited[6:9], dim=-3))  # [8,3,H,W], [0,1]
@@ -18,11 +17,14 @@ def expand_split_svbrdf(input_svbrdf):
     roughness_shape = [1, 3, 1, 1]
     roughness = roughness_scalar.repeat(roughness_shape)
 
-    normals_x, normals_y = torch.split(normals_xy.mul(3.0), 1, dim=-3)
+    normals_xy = torch.cat(splited[0:2], dim=-3)  # [8,2,H,W], [-1,1]
+    # normals_x, normals_y = torch.split(normals_xy.mul(3.0), 1, dim=-3)
+    normals_x, normals_y = torch.split(normals_xy, 1, dim=-3)  # [-1,1]
     normals_z = torch.ones_like(normals_x)
     normals = torch.cat([normals_x, normals_y, normals_z], dim=-3)
     norm = torch.sqrt(torch.sum(torch.pow(normals, 2.0), dim=-3, keepdim=True))
-    normals = torch.div(normals, norm)
+    normals = torch.div(normals, norm)  # norm, [N, 3, H, W], [-1,1]
+    normals = map_to_img(normals)
 
     # 4*[N,3,H,W], between [0,1]
     return normals, diffuse, roughness, specular
@@ -61,13 +63,14 @@ def generate_normalized_random_direction(count):
 
 
 def generate_distance():
-    # distance = torch.Tensor(1).uniform_(5, 6)
-    distance = torch.Tensor(1).uniform_(8, 10)
+    distance = torch.Tensor(1).uniform_(6, 8)
+    # distance = torch.Tensor(1).uniform_(8, 10)
     return torch.sqrt(distance)
 
 
 to_img = transforms.ToPILImage()
 to_tensor = transforms.ToTensor()
+scale_trans = transforms.Resize([288, 288])
 
 
 def map_to_img(x):

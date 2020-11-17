@@ -45,7 +45,8 @@ if __name__ == '__main__':
     # plt.imshow(rendered)
     # plt.show()
 
-    dataset_path = '/media/winter/M2/UbuntuDownloads/Deschaintre2018_Dataset/Data_Deschaintre18/copied'
+    # dataset_path = '/media/winter/M2/UbuntuDownloads/Deschaintre2018_Dataset/Data_Deschaintre18/copied'
+    dataset_path = 'E:\\UbuntuDownloads\\Deschaintre2018_Dataset\\Data_Deschaintre18\\testBlended'
     print('fetching data...')
     dataset = MaterialDataset(data_dir=dataset_path)
     data_loader = DataLoader(dataset, batch_size=8, shuffle=True, num_workers=4)

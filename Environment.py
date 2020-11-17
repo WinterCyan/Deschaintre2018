@@ -36,7 +36,7 @@ def generate_specular_scenes(count):
     light_pos = view_pos * torch.Tensor([-1.0, -1.0, 1.0]).unsqueeze(0)
     distance_view = Utils.generate_distance()
     distance_light = Utils.generate_distance()
-    shift = torch.cat([torch.Tensor(count, 2).uniform_(-1.0, 1.0), torch.zeros((count, 1))+0.0001], dim=-1)
+    shift = torch.cat([torch.Tensor(count, 2).uniform_(-0.5, 0.5), torch.zeros((count, 1))+0.0001], dim=-1)
     view_pos = view_pos * distance_view + shift
     light_pos = light_pos * distance_light + shift
     scenes = []

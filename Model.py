@@ -113,11 +113,14 @@ class RenderingLoss(nn.Module):
 
 
 class MixLoss(nn.Module):
-    def __init__(self, renderer, l1_weight=0.1):
+    def __init__(self, renderer, l1_weight=0.1, render_weight=1.0):
         super(MixLoss, self).__init__()
         self.l1_weight = l1_weight
+        self.render_weight = render_weight
         self.l1_loss = L1Loss()
         self.rendering_loss = RenderingLoss(renderer=renderer)
 
     def forward(self, input_batch, target_batch):
-        return self.l1_weight*self.l1_loss(input_batch, target_batch) + self.rendering_loss(input_batch, target_batch)
+        # return self.l1_weight*self.l1_loss(input_batch, target_batch) + self.rendering_loss(input_batch, target_batch)
+        return self.l1_weight * self.l1_loss(input_batch, target_batch)\
+               + self.render_weight * self.rendering_loss(input_batch, target_batch)

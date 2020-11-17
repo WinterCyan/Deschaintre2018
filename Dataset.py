@@ -8,6 +8,11 @@ import torchvision.transforms as transforms
 
 # ImageFile.LOAD_TRUNCATED_IMAGES = True
 transformer = transforms.Compose([transforms.ToTensor()])
+real_transformer = transforms.Compose([
+    transforms.CenterCrop(3456),
+    transforms.Resize(256),
+    transforms.ToTensor()
+])
 
 
 class MaterialDataset(Dataset):
@@ -24,6 +29,21 @@ class MaterialDataset(Dataset):
         img = self.transformer(img)  # [3,288,1440]
         rendered_img, svbrdf = img_to_tensor(img)  # [3,288,288], [12,288,288]
         return {'img': rendered_img, 'svbrdf': svbrdf}
+
+
+class RealMaterialDataset(Dataset):
+    def __init__(self, data_dir):
+        self.filenames = os.listdir(data_dir)
+        self.filenames = [os.path.join(data_dir, f) for f in self.filenames if f.endswith('.jpg')]
+        self.transformer = real_transformer
+
+    def __len__(self):
+        return len(self.filenames)
+
+    def __getitem__(self, idx):
+        img = Image.open(self.filenames[idx])
+        img = self.transformer(img)  # [3,288,288]
+        return {'img': img}
 
 
 def img_to_tensor(input_img):
