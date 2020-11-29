@@ -9,6 +9,7 @@ from Utils import *
 
 # dataset_path = '/media/winter/M2/UbuntuDownloads/Deschaintre2018_Dataset/Data_Deschaintre18/testBlended'
 # dataset_path = 'D:\\UbuntuDownloads\\Deschaintre2018_Dataset\\Data_Deschaintre18\\testBlended'
+# dataset_path = 'C:\\datasets\\DeepMaterialsData\\Data_Deschaintre18\\testBlended'
 dataset_path = 'C:\\datasets\\DeepMaterialsData\\Data_Deschaintre18\\trainBlended'
 device = 'cuda:0'
 renderer = InNetworkRenderer()

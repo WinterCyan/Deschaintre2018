@@ -9,7 +9,7 @@ import torchvision.transforms as transforms
 # ImageFile.LOAD_TRUNCATED_IMAGES = True
 transformer = transforms.Compose([transforms.ToTensor()])
 real_transformer = transforms.Compose([
-    transforms.CenterCrop(3456),
+    # transforms.CenterCrop(3456),
     transforms.Resize(256),
     transforms.ToTensor()
 ])
