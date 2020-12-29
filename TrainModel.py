@@ -34,8 +34,9 @@ from SaveLoad import *
 
 
 if __name__ == '__main__':
+    dataset_path = '/media/winter/_hdd/MaterialDataset/Data_Deschaintre18/trainBlended'
     # dataset_path = '/media/winter/M2/UbuntuDownloads/Deschaintre2018_Dataset/Data_Deschaintre18/trainBlended'
-    dataset_path = 'C:\\datasets\\DeepMaterialsData\\Data_Deschaintre18\\trainBlended'
+    # dataset_path = 'C:\\datasets\\DeepMaterialsData\\Data_Deschaintre18\\trainBlended'
     device = 'cuda:0'
     print("creating model...")
     model = MaterialNet().to(device)
